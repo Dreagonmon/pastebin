@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <title>Paste Bin</title>
+        <style>
+            * {
+                padding: 0;
+                margin: 0;
+                box-sizing: border-box;
+            }
+            html, body {
+                width: 100%;
+                height: 100%;
+            }
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            button {
+                padding: 0.5rem;
+                background-color: #08D;
+                color: white;
+                border-width: 0;
+                border-radius: 0.5rem;
+                font-size: 1rem;
+                cursor: pointer;
+            }
+            textarea, input {
+                padding: 0.25rem;
+                border-radius: 0.5rem;
+                border-style: solid;
+            }
+            textarea, pre, code {
+                font-family: monospace;
+            }
+            dialog {
+                border: none;
+                background-color: transparent;
+                width: 100%;
+                height: 100%;
+            }
+            .dialog_outter {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .dialog_inner {
+                width: fit-content;
+                height: 100%;
+                display: flex;
+                align-items: center;
+            }
+        </style>
+        <script type="module">
+            window.addEventListener("load", async () => {
+                //
+            });
+        </script>
+    </head>
+    <body>
+        
+        <dialog id="dialog_loading">
+            <div class="dialog_outter">
+                <div class="dialog_inner">
+                    <div style="padding: 1rem; background-color: #FFF; color: #000; border: #000 0.25rem solid;">Loading...</div>
+                </div>
+            </div>
+        </dialog>
+    </body>
+</html>

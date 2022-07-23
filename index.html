@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <link rel="shortcut  icon" href="favicon.webp" type="image/webp" />
+        <title>Paste Bin</title>
+        <style>
+            * {
+                padding: 0;
+                margin: 0;
+                box-sizing: border-box;
+            }
+            html, body {
+                width: 100%;
+                height: 100%;
+            }
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                height: 100%;
+            }
+            button {
+                padding: 0.5rem;
+                background-color: #08D;
+                color: white;
+                border-width: 0;
+                border-radius: 0.5rem;
+                font-size: 1rem;
+                cursor: pointer;
+            }
+            textarea, input {
+                padding: 0.25rem;
+                border-radius: 0.5rem;
+                border-style: solid;
+            }
+            textarea, pre, code {
+                font-family: monospace;
+            }
+            .dialog {
+                border: none;
+                position: fixed;
+                background-color: rgba(0, 0, 0, 0.25);
+                width: 100vw;
+                height: 100vh;
+                overflow: hidden;
+            }
+            .dialog_outter {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .dialog_inner {
+                width: fit-content;
+                max-width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+            }
+            .hidden {
+                display: none;
+            }
+            .not-hidden {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                height: 100%;
+            }
+            .flex-row {
+                display: flex;
+                align-items: center;
+            }
+            .flex-col {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .flex-fix {
+                flex-grow: 0;
+                flex-shrink: 0;
+            }
+            .flex-auto {
+                flex: 1 1 auto;
+            }
+            .w-full {
+                width: 100%;
+            }
+            .h-full {
+                height: 100%;
+            }
+            .scroll {
+                overflow-x: hidden;
+                overflow-y: auto;
+            }
+            .no-scroll {
+                overflow-x: hidden;
+                overflow-y: hidden;
+            }
+        </style>
+        <script type="module">
+            const encoder = new TextEncoder();
+            const decoder = new TextDecoder();
+
+            const bufferToBinString = (buffer) => {
+            return [...new Uint8Array(buffer)]
+                .map(x => String.fromCharCode(x))
+                .join("");
+            };
+
+            const binStringToBuffer = (binString) => {
+                return new Uint8Array([...binString].map(ch => ch.charCodeAt(0))).buffer;
+            }
+
+            const randomBuffer = (size) => {
+                const array = new Uint8Array(size);
+                window.crypto.getRandomValues(array);
+                return array.buffer;
+            };
+
+            const pad = (buffer) => {
+                const plaintext = new Uint8Array(buffer);
+                const lackOfByte = 16 - plaintext.byteLength % 16;
+                const padding = new Uint8Array(lackOfByte);
+                padding.fill(lackOfByte);
+                const result = new Uint8Array(plaintext.byteLength + padding.length);
+                result.set(plaintext);
+                result.set(padding, plaintext.byteLength);
+                return result.buffer;
+            };
+
+            const unpad = (paddedBuffer) => {
+                const padded = new Uint8Array(paddedBuffer);
+                return new Uint8Array(padded.subarray(0, padded.byteLength - padded[padded.byteLength - 1])).buffer;
+            };
+
+            const sha256 = async (content) => {
+                return await window.crypto.subtle.digest(
+                    "SHA-256",
+                    typeof content === "string" ? encoder.encode(content) : content,
+                );
+            };
+
+            const aesEncrypt = async (key, content) => {
+                const aesKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    typeof key === "string" ? new Uint8Array(new Uint8Array(await sha256(key)).slice(0, 16)).buffer : key,
+                    { name: "AES-GCM" },
+                    false,
+                    ["encrypt"],
+                );
+                const iv = new Uint8Array(randomBuffer(16));
+                const data = new Uint8Array(await window.crypto.subtle.encrypt(
+                    { name: "AES-GCM", iv },
+                    aesKey,
+                    content
+                ));
+                const result = new Uint8Array(iv.byteLength + data.byteLength);
+                result.set(iv, 0);
+                result.set(data, iv.byteLength);
+                return result.buffer;
+            };
+
+            const aesDectypt = async (key, content) => {
+                const aesKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    typeof key === "string" ? new Uint8Array(new Uint8Array(await sha256(key)).slice(0, 16)).buffer : key,
+                    { name: "AES-GCM" },
+                    false,
+                    ["decrypt"],
+                );
+                content = new Uint8Array(content);
+                const iv = content.subarray(0, 16);
+                content = content.subarray(16);
+                return await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv },
+                    aesKey,
+                    content,
+                );
+            };
+
+            const withLoadingDialog = async (task) => {
+                const dialog = document.querySelector("#dialog_loading");
+                if (dialog.classList.contains("hidden")) dialog.classList.remove("hidden");
+                try {
+                    const result = task();
+                    if (result instanceof Promise) {
+                        return await result;
+                    } else {
+                        return result;
+                    }
+                } finally {
+                    if (!dialog.classList.contains("hidden")) dialog.classList.add("hidden");
+                }
+            }
+
+            const alertDialog = (message) => {
+                const dialog = document.querySelector("#dialog_alert");
+                const pre = dialog.querySelector("pre");
+                const button = dialog.querySelector("button");
+                pre.innerText = message;
+                if (button.onclick) button.onclick();
+                return new Promise(resolve => {
+                    if (dialog.classList.contains("hidden")) dialog.classList.remove("hidden");
+                    button.onclick = () => {
+                        button.onclick = undefined;
+                        if (!dialog.classList.contains("hidden")) dialog.classList.add("hidden");
+                        resolve();
+                    };
+                });
+            };
+
+            const hashName = async name => `pastebin-${btoa(bufferToBinString(await sha256(name)))}`;
+
+            const hashKey = async key => new Uint8Array(new Uint8Array(await sha256(`KeYs${key}X`)).slice(0, 16)).buffer;
+
+            const upload = async (name, key, content, password) => {
+                name = await hashName(name);
+                password = btoa(bufferToBinString(await sha256(`SAlt${password}Exp`)));
+                key = await hashKey(key);
+                content = pad(encoder.encode(content));
+                content = await aesEncrypt(key, content);
+                content = btoa(bufferToBinString(content));
+                const request = {
+                    name,
+                    password: `pwd-${password}`,
+                    content,
+                };
+                return await (await fetch("/update", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(request),
+                })).json();
+            };
+
+            const query = async (name, key) => {
+                name = await hashName(name);
+                key = await hashKey(key);
+                const resp = await (await fetch("/query", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ name }),
+                })).json();
+                if (resp.code !== 200) throw new Error(resp);
+                let content = binStringToBuffer(atob(resp.data));
+                content = await aesDectypt(key, content);
+                content = decoder.decode(unpad(content));
+                return content;
+            };
+
+            const changePage = (pageName) => {
+                [
+                    "#page-update",
+                    "#page-query",
+                ].forEach((elementQueryString) => {
+                    const cls = document.querySelector(elementQueryString).classList;
+                    if (!cls.contains("hidden")) cls.add("hidden");
+                    if (cls.contains("not-hidden")) cls.remove("not-hidden");
+                });
+                const targetClass = document.querySelector(`#page-${pageName}`).classList;
+                if (targetClass.contains("hidden")) targetClass.remove("hidden");
+                if (!targetClass.contains("not-hidden")) targetClass.add("not-hidden");
+            };
+
+            const onPageChange = async (event) => {
+                const url = new URL(window.location.href);
+                const queryName = url.searchParams.get("name");
+                const queryKey = url.hash.substring(1);
+                if (queryName && queryKey) {
+                    changePage("query");
+                    try {
+                        await withLoadingDialog(async () => {
+                            const content = await query(queryName, queryKey);
+                            document.querySelector("#view-content").innerText = content;
+                        });
+                    } catch {
+                        window.history.replaceState({}, "", "/");
+                        changePage("update");
+                    }
+                } else {
+                    changePage("update");
+                }
+            };
+            
+            const btnView = async (event) => {
+                const name = document.querySelector("#field-name").value;
+                const key = document.querySelector("#field-key").value;
+                if (name && key) {
+                    window.history.replaceState({}, "", `/?name=${encodeURIComponent(name)}#${encodeURIComponent(key)}`);
+                    await onPageChange(event);
+                } else {
+                    await alertDialog("\"Name\" and \"Key\" are required!");
+                }
+            }
+            
+            const btnUpload = async (event) => {
+                const name = document.querySelector("#field-name").value;
+                const key = document.querySelector("#field-key").value;
+                const content = document.querySelector("#field-content").value;
+                const password = document.querySelector("#field-password").value;
+                if (name && key && content && password) {
+                    if (content.length > 16384) {
+                        await alertDialog("\"Content\" is too long.");
+                        return;
+                    }
+                    try {
+                        const result = await withLoadingDialog(async () => await upload(name, key, content, password));
+                        if (result.code === 200) await alertDialog("Upload successed.");
+                        else if (result.code === 403) await alertDialog("\"Name\" already exists and \"Password\" is not match.");
+                    } catch (e) {
+                        console.error(e);
+                        await alertDialog("Upload failed.");
+                    }
+                } else {
+                    await alertDialog("All fields are required!");
+                }
+            }
+
+            const btnEdit = async (event) => {
+                const content = document.querySelector("#view-content").innerText;
+                const url = new URL(window.location.href);
+                window.history.replaceState({}, "", "/");
+                await onPageChange(event);
+                const queryName = url.searchParams.get("name");
+                const queryKey = url.hash.substring(1);
+                document.querySelector("#field-name").value = queryName;
+                document.querySelector("#field-key").value = queryKey;
+                document.querySelector("#field-content").value = content;
+            };
+
+            window.addEventListener("load", (event) => {
+                document.querySelector("#button-view").addEventListener("click", btnView);
+                document.querySelector("#button-upload").addEventListener("click", btnUpload);
+                document.querySelector("#button-edit").addEventListener("click", btnEdit);
+                onPageChange(event);
+            });
+            window.addEventListener("popstate", onPageChange);
+        </script>
+    </head>
+    <body>
+        <div id="page-update" class="hidden">
+            <div class="w-full h-full no-scroll flex-col" style="max-width: 1024px;">
+                <div class="w-full flex-fix flex-row">
+                    <div class="flex-auto flex-row" style="margin: 0.5rem 0 0.5rem 0.5rem;">
+                        <div class="w-full flex-col">
+                            <label>Name</label>
+                            <input class="w-full" id="field-name"/>
+                        </div>
+                    </div>
+                    <div class="flex-auto flex-row" style="margin: 0.5rem 0 0.5rem 0.5rem;">
+                        <div class="w-full flex-col">
+                            <label>Key</label>
+                            <input class="w-full" id="field-key"/>
+                        </div>
+                    </div>
+                    <div class="flex-fix" style="margin: 0.5rem;">
+                        <button id="button-view">View</button>
+                    </div>
+                </div>
+                <div class="w-full flex-auto flex-col">
+                    <label>Content</label>
+                    <div class="w-full flex-auto" style="padding: 0 0.5rem;">
+                        <textarea class="w-full h-full" id="field-content"></textarea>
+                    </div>
+                </div>
+                <div class="w-full flex-fix flex-row" style="margin: 0.5rem 0; padding: 0 0.5rem;">
+                    <label>Password</label>
+                    <input class="w-full" style="margin: 0.5rem;" id="field-password"/>
+                    <button id="button-upload">Upload</button>
+                </div>
+            </div>
+        </div>
+        <div id="page-query" class="hidden">
+            <div class="w-full h-full no-scroll flex-col" style="max-width: 1024px;">
+                <div class="w-full flex-auto" style="overflow: hidden; padding: 0.5rem 0.5rem 0 0.5rem;">
+                    <pre class="w-full h-full" style="overflow: auto;" id="view-content"></pre>
+                </div>
+                <div class="w-full flex-fix flex-row" style="padding: 0.5rem;">
+                    <button class="w-full" id="button-edit">Edit</button>
+                </div>
+            </div>
+        </div>
+        <!-- Loading Dialog -->
+        <div class="dialog hidden" id="dialog_loading">
+            <div class="dialog_outter">
+                <div class="dialog_inner">
+                    <div style="padding: 1rem; background-color: #FFF; color: #000; border: #000 0.25rem solid;">Loading...</div>
+                </div>
+            </div>
+        </div>
+        <div class="dialog hidden" id="dialog_alert">
+            <div class="dialog_outter">
+                <div class="dialog_inner">
+                    <div class="w-full" style="background-color: #FFF; color: #000; border: #000 0.25rem solid;">
+                        <pre  class="w-full" style="padding: 1rem; overflow: auto;"></pre>
+                        <button class="w-full" style="border: none; border-radius: 0; background-color: #000; color: #FFF;">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
