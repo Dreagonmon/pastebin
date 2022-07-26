@@ -275,15 +275,18 @@
                 const queryName = url.searchParams.get("name");
                 const queryKey = url.hash.substring(1);
                 if (queryName && queryKey) {
-                    changePage("query");
                     try {
                         await withLoadingDialog(async () => {
                             const content = await query(queryName, queryKey);
+                            changePage("query");
                             document.querySelector("#view-content").innerText = content;
                         });
                     } catch {
+                        await alertDialog("No content found.");
                         window.history.replaceState({}, "", "/");
                         changePage("update");
+                        document.querySelector("#field-name").value = queryName;
+                        document.querySelector("#field-key").value = queryKey;
                     }
                 } else {
                     changePage("update");
