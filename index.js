@@ -25,8 +25,8 @@ const TIME_TO_LIFE = 60 * 60 * 24; // 1 day
 const FIELD_MAX_LENGTH = 64;
 const FIELD_CONTENT_MAX_LENGTH = 32768;
 
-const kv = await Deno.openKv();
-const db = new ItemDatabase(kv);
+// const kv = await Deno.openKv();
+const db = new ItemDatabase("pastebin.db");
 await db.init();
 
 await grantOrThrow(

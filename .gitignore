@@ -1,2 +1,3 @@
 config.sh
 deno.lock
+*.db
