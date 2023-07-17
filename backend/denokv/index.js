@@ -38,6 +38,7 @@ export class ItemDatabase {
     }
 
     async init () {
+        console.log("init database");
         if (!this.instanceId) {
             this.instanceId = await getDenoDeployInstanceId();
         }
