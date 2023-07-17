@@ -7,39 +7,40 @@
  * export TABLE_TTL_FIELD=expdate
  * export DENO_DEPLOY_TOKEN=<DENO_DEPLOY_TOKEN>
  */
-import { serve } from "https://deno.land/std@0.145.0/http/server.ts";
-import { grantOrThrow } from "https://deno.land/std@0.145.0/permissions/mod.ts";
-import {
-    getItemByKey,
-    putItem,
-    updateObjectTTL,
-    TABLE_KEY_FIELD,
-} from "./object_name_service.js";
+import { serve, Server } from "https://deno.land/std@0.194.0/http/server.ts";
+import { grantOrThrow } from "https://deno.land/std@0.194.0/permissions/mod.ts";
+import { ItemDatabase } from "./backend/denokv/index.js";
+import { newItem, updateItemTTL } from "./backend/item.js";
 
 const PORT = 8000;
 const FAVICON_WEBP_DATA = atob(
-    "UklGRigBAABXRUJQVlA4WAoAAAAQAAAAPwAAPwAAQUxQSNMAAAABgFXbWt7oSkBCJOCgn4"+
-    "Q4aBwUB60EnAQHwUEroQ6Ig/vwMeXjm5/HWRExAfirymXcVdhpugc34UnjZ/BSaL574UQn"+
-    "MkNmxfvR+CWGOyTbcY9mt8ZP7Ui2m9HOz6eQu0miJyaD2Hy1OPagLkkkdY7hThJJRfExVl"+
-    "UBgKVjvABAVXWsqaTwsntBJ9XGqKUT7WJHFKdATptT4AZhy3U4bwGOJv9rYfWxGVWVfWRV"+
-    "x7Jq1zAvXKnz2Ko8r2MovgoMw+npDBZYqp+6wDi9fbwTZopD/DUBAFZQOCAuAAAAkAMAnQ"+
+    "UklGRigBAABXRUJQVlA4WAoAAAAQAAAAPwAAPwAAQUxQSNMAAAABgFXbWt7oSkBCJOCgn4" +
+    "Q4aBwUB60EnAQHwUEroQ6Ig/vwMeXjm5/HWRExAfirymXcVdhpugc34UnjZ/BSaL574UQn" +
+    "MkNmxfvR+CWGOyTbcY9mt8ZP7Ui2m9HOz6eQu0miJyaD2Hy1OPagLkkkdY7hThJJRfExVl" +
+    "UBgKVjvABAVXWsqaTwsntBJ9XGqKUT7WJHFKdATptT4AZhy3U4bwGOJv9rYfWxGVWVfWRV" +
+    "x7Jq1zAvXKnz2Ko8r2MovgoMw+npDBZYqp+6wDi9fbwTZopD/DUBAFZQOCAuAAAAkAMAnQ" +
     "EqQABAAD6RSKBMJaQjIiIIALASCWkAABA3U1AFeIW5AAD++M71eAAAAA=="
 );
-const TIME_TO_LIFE = 60*60*24; // 1 day
+const TIME_TO_LIFE = 60 * 60 * 24; // 1 day
 const FIELD_MAX_LENGTH = 64;
 const FIELD_CONTENT_MAX_LENGTH = 32768;
+
+const db = new ItemDatabase();
+await db.init();
 
 await grantOrThrow(
     { name: "net", host: `0.0.0.0:${PORT}` },
     { name: "read", path: "./index.html" },
 );
 
-const response = (code=200, data=null) => {
+const response = (code = 200, data = null) => {
     return new Response(
         JSON.stringify({ code, data }),
-        {headers: {
-            "Content-Type": "application/json",
-        }}
+        {
+            headers: {
+                "Content-Type": "application/json",
+            }
+        }
     );
 };
 
@@ -66,45 +67,55 @@ const handler = async (req, _) => {
             ) {
                 return response(406);
             }
-            const oldItem = await getItemByKey(body.name);
+            const oldItem = await db.getItemByKey(body.name);
             if (oldItem && oldItem.password && body.password !== oldItem.password) {
                 return response(403);
             }
-            const item = {
-                [TABLE_KEY_FIELD]: body.name,
-                content: body.content,
-                password: body.password,
-            };
-            updateObjectTTL(item, TIME_TO_LIFE);
-            await putItem(item);
+            const item = newItem(body.name);
+            item.content = body.content;
+            item.password = body.password;
+            updateItemTTL(item, TIME_TO_LIFE);
+            await db.putItem(item);
+            db.cleanItemTask(); // start clean task, but don't wait
             return response(200, "ok");
         } else if (path === "/query") {
             if (!body.name) {
                 return response(406);
             }
-            const item = await getItemByKey(body.name);
+            const item = await db.getItemByKey(body.name);
             if (!item) {
                 return response(404);
             }
+            db.cleanItemTask(); // start clean task, but don't wait
             return response(200, item.content);
         }
         return response(404);
     } else if (req.method.toUpperCase() === "GET") {
         if (path === "/" || path === "/index.html") {
             const f = await Deno.open("./index.html", { read: true });
-            return new Response(f.readable, {headers: {
-                "Content-Type": "text/html",
-            }});
+            return new Response(f.readable, {
+                headers: {
+                    "Content-Type": "text/html",
+                }
+            });
         } else if (path === "/favicon.webp" || path === "/favicon.ico") {
             return new Response(
                 FAVICON_WEBP_DATA,
-                {headers: {
-                    "Content-Type": "image/webp",
-                }}
+                {
+                    headers: {
+                        "Content-Type": "image/webp",
+                    }
+                }
             );
         }
         return response(404);
     }
 };
 
-await serve(handler);
+export const getServer = (port) => {
+    return new Server({ port, handler });
+};
+
+if (import.meta.main) {
+    await getServer(8000).listenAndServe();
+}
