@@ -26,9 +26,12 @@ export class ItemDatabase {
      * @param {string} [instanceId] 
      */
     constructor (dbpath = undefined, instanceId = undefined) {
-        /** @type {Deno.Kv} */
-        this._kvPath = dbpath;
-        this.kv = null;
+        if (dbpath instanceof Deno.Kv) {
+            /** @type {Deno.Kv} */
+            this.kv = null;
+        } else {
+            this._kvPath = dbpath;
+        }
         this.instanceId = instanceId;
         this._test_delay = 0;
     }
@@ -38,14 +41,15 @@ export class ItemDatabase {
     }
 
     async init () {
-        console.log("init database");
         if (!this.instanceId) {
             this.instanceId = await getDenoDeployInstanceId();
         }
-        if (this._kvPath) {
-            this.kv = await Deno.openKv(this._kvPath);
-        } else {
-            this.kv = await Deno.openKv();
+        if (!this.kv) {
+            if (this._kvPath) {
+                this.kv = await Deno.openKv(this._kvPath);
+            } else {
+                this.kv = await Deno.openKv();
+            }
         }
     }
 
