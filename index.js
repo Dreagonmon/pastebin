@@ -117,5 +117,5 @@ export const getServer = (port) => {
 };
 
 if (import.meta.main) {
-    await getServer(8000).listenAndServe();
+    await serve(handler);
 }
