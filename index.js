@@ -41,16 +41,17 @@ const response = (code = 200, data = null) => {
     );
 };
 
+const db = new ItemDatabase();
+await db.init();
+
 /**handler 主函数
  * name, key, password, 其中readKey不会被记录，在客户端完成加密解密。
  * /update: name, password, content 对象存在且没过期的话要求密码相同，否则保存新的对象
  *     content限制长度为16384个字符。对象过期时间1天。
  * /query: name -> content
- * @type {import("https://deno.land/std@0.145.0/http/server.ts").Handler} 
+ * @type {import("https://deno.land/std@0.194.0/http/server.ts").Handler} 
  */
 const handler = async (req, _) => {
-    const db = new ItemDatabase();
-    await db.init();
     try {
         const url = new URL(req.url);
         const path = url.pathname;
@@ -110,7 +111,7 @@ const handler = async (req, _) => {
             return response(404);
         }
     } finally {
-        db.close();
+        // db.close();
     }
 };
 
