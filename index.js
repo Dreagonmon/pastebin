@@ -56,7 +56,6 @@ const handler = async (req, _) => {
         const url = new URL(req.url);
         const path = url.pathname;
         if (req.method.toUpperCase() === "POST") {
-            await db.cleanItemTask(); // clean database before runnning
             const body = await req.json();
             if (path === "/update") {
                 if (!body.name || !body.content || !body.password) {
@@ -112,6 +111,7 @@ const handler = async (req, _) => {
         }
     } finally {
         // db.close();
+        db.cleanItemTask(); // clean database but don't wait
     }
 };
 
