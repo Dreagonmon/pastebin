@@ -6,8 +6,8 @@ const DB_CLEAN_TIME_KEY = [ "idb", "clean_time" ];
 const DB_CLEAN_BATCH_SIZE = 5;
 const DB_CLEAN_INTERVAL = 10 * 60; // sec
 
-const getDenoDeployInstanceId = () => {
-    if (Deno.permissions.querySync({ name: "env", variable: "DENO_REGION" }).state == "granted") {
+const getDenoDeployInstanceId = async () => {
+    if ((await Deno.permissions.query({ name: "env", variable: "DENO_REGION" })).state == "granted") {
         const instanceId = Deno.env.get("DENO_REGION");
         if (instanceId) {
             return instanceId;
@@ -29,7 +29,7 @@ export class ItemDatabase {
         /** @type {Deno.Kv} */
         this._kvPath = dbpath;
         this.kv = null;
-        this.instanceId = instanceId ?? getDenoDeployInstanceId();
+        this.instanceId = instanceId;
         this._test_delay = 0;
     }
 
@@ -38,6 +38,9 @@ export class ItemDatabase {
     }
 
     async init () {
+        if (!this.instanceId) {
+            this.instanceId = await getDenoDeployInstanceId();
+        }
         if (this._kvPath) {
             this.kv = await Deno.openKv(this._kvPath);
         } else {
