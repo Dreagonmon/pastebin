@@ -25,10 +25,6 @@ const TIME_TO_LIFE = 60 * 60 * 24; // 1 day
 const FIELD_MAX_LENGTH = 64;
 const FIELD_CONTENT_MAX_LENGTH = 32768;
 
-// const kv = await Deno.openKv();
-const db = new ItemDatabase("pastebin.db");
-await db.init();
-
 await grantOrThrow(
     { name: "net", host: `0.0.0.0:${PORT}` },
     { name: "read", path: "./index.html" },
@@ -53,63 +49,68 @@ const response = (code = 200, data = null) => {
  * @type {import("https://deno.land/std@0.145.0/http/server.ts").Handler} 
  */
 const handler = async (req, _) => {
-    const url = new URL(req.url);
-    const path = url.pathname;
-    if (req.method.toUpperCase() === "POST") {
-        const body = await req.json();
-        if (path === "/update") {
-            if (!body.name || !body.content || !body.password) {
-                return response(406);
-            }
-            if (
-                body.name.length > FIELD_MAX_LENGTH ||
-                body.content.length > FIELD_CONTENT_MAX_LENGTH ||
-                body.password.length > FIELD_MAX_LENGTH
-            ) {
-                return response(406);
-            }
-            const oldItem = await db.getItemByKey(body.name);
-            if (oldItem && oldItem.password && body.password !== oldItem.password) {
-                return response(403);
-            }
-            const item = newItem(body.name);
-            item.content = body.content;
-            item.password = body.password;
-            updateItemTTL(item, TIME_TO_LIFE);
-            await db.putItem(item);
-            db.cleanItemTask(); // start clean task, but don't wait
-            return response(200, "ok");
-        } else if (path === "/query") {
-            if (!body.name) {
-                return response(406);
-            }
-            const item = await db.getItemByKey(body.name);
-            if (!item) {
-                return response(404);
-            }
-            db.cleanItemTask(); // start clean task, but don't wait
-            return response(200, item.content);
-        }
-        return response(404);
-    } else if (req.method.toUpperCase() === "GET") {
-        if (path === "/" || path === "/index.html") {
-            const f = await Deno.open("./index.html", { read: true });
-            return new Response(f.readable, {
-                headers: {
-                    "Content-Type": "text/html",
+    const db = new ItemDatabase();
+    await db.init();
+    try {
+        const url = new URL(req.url);
+        const path = url.pathname;
+        if (req.method.toUpperCase() === "POST") {
+            await db.cleanItemTask(); // clean database before runnning
+            const body = await req.json();
+            if (path === "/update") {
+                if (!body.name || !body.content || !body.password) {
+                    return response(406);
                 }
-            });
-        } else if (path === "/favicon.webp" || path === "/favicon.ico") {
-            return new Response(
-                FAVICON_WEBP_DATA,
-                {
+                if (
+                    body.name.length > FIELD_MAX_LENGTH ||
+                    body.content.length > FIELD_CONTENT_MAX_LENGTH ||
+                    body.password.length > FIELD_MAX_LENGTH
+                ) {
+                    return response(406);
+                }
+                const oldItem = await db.getItemByKey(body.name);
+                if (oldItem && oldItem.password && body.password !== oldItem.password) {
+                    return response(403);
+                }
+                const item = newItem(body.name);
+                item.content = body.content;
+                item.password = body.password;
+                updateItemTTL(item, TIME_TO_LIFE);
+                await db.putItem(item);
+                return response(200, "ok");
+            } else if (path === "/query") {
+                if (!body.name) {
+                    return response(406);
+                }
+                const item = await db.getItemByKey(body.name);
+                if (!item) {
+                    return response(404);
+                }
+                return response(200, item.content);
+            }
+            return response(404);
+        } else if (req.method.toUpperCase() === "GET") {
+            if (path === "/" || path === "/index.html") {
+                const f = await Deno.open("./index.html", { read: true });
+                return new Response(f.readable, {
                     headers: {
-                        "Content-Type": "image/webp",
+                        "Content-Type": "text/html",
                     }
-                }
-            );
+                });
+            } else if (path === "/favicon.webp" || path === "/favicon.ico") {
+                return new Response(
+                    FAVICON_WEBP_DATA,
+                    {
+                        headers: {
+                            "Content-Type": "image/webp",
+                        }
+                    }
+                );
+            }
+            return response(404);
         }
-        return response(404);
+    } finally {
+        db.close();
     }
 };
 

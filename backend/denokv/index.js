@@ -26,12 +26,9 @@ export class ItemDatabase {
      * @param {string} [instanceId] 
      */
     constructor (dbpath = undefined, instanceId = undefined) {
-        if (dbpath instanceof Deno.Kv) {
-            /** @type {Deno.Kv} */
-            this.kv = null;
-        } else {
-            this._kvPath = dbpath;
-        }
+        this._kvPath = dbpath;
+        /** @type {Deno.Kv} */
+        this.kv = null;
         this.instanceId = instanceId;
         this._test_delay = 0;
     }
@@ -54,7 +51,10 @@ export class ItemDatabase {
     }
 
     close () {
-        this.kv.close();
+        if (this.kv instanceof Deno.Kv) {
+            this.kv.close();
+        }
+        this.kv = null;
     }
 
     /**
